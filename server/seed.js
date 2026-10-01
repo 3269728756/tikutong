@@ -1,0 +1,90 @@
+const crypto = require('crypto');
+
+function fp(text) { return crypto.createHash('md5').update(text || '').digest('hex'); }
+
+const seedQuestions = [
+  // ===== 公务员·事业编 =====
+  { category: '公务员·事业编', subject: '常识判断', type: 'single', hot: 1, difficulty: 1, source: 'seed',
+    question: '下列关于我国地理的表述，正确的是？',
+    options: ['我国领土最南端在曾母暗沙','我国领土最东端在黑瞎子岛','我国领土最北端在漠河','以上都正确'],
+    answer: 'D', analysis: '我国领土四至点：最北端漠河，最南端曾母暗沙，最东端黑瞎子岛，最西端帕米尔高原。' },
+  { category: '公务员·事业编', subject: '常识判断', type: 'single', hot: 1, difficulty: 1, source: 'seed',
+    question: '世界上面积最大的国家是？',
+    options: ['中国','美国','俄罗斯','加拿大'],
+    answer: 'C', analysis: '俄罗斯面积约1709万平方公里，是世界面积最大的国家。' },
+  { category: '公务员·事业编', subject: '常识判断', type: 'judge', hot: 0, difficulty: 1, source: 'seed',
+    question: '地球是太阳系中距离太阳第三近的行星。',
+    answer: '对', analysis: '太阳系行星按距太阳远近：水星、金星、地球、火星、木星、土星、天王星、海王星。地球排第三。' },
+  { category: '公务员·事业编', subject: '言语理解', type: 'single', hot: 1, difficulty: 2, source: 'seed',
+    question: '"春风又绿江南岸"中"绿"字的词性是？',
+    options: ['形容词','名词','动词','副词'],
+    answer: 'C', analysis: '"绿"在这里是使动用法，意为"使…变绿"，作动词使用。' },
+  { category: '公务员·事业编', subject: '数量关系', type: 'single', hot: 0, difficulty: 2, source: 'seed',
+    question: '甲乙两人同时从A地出发去B地，甲每小时走5公里，乙每小时走4公里，甲到达B地后立即返回，在距B地2公里处与乙相遇，则AB两地距离为？',
+    options: ['16公里','18公里','20公里','22公里'],
+    answer: 'B', analysis: '设AB相距x公里。甲走了x+2，乙走了x-2，时间相等：(x+2)/5=(x-2)/4 → x=18。' },
+
+  // ===== 教师资格证 =====
+  { category: '教师资格证', subject: '教育知识', type: 'single', hot: 1, difficulty: 1, source: 'seed',
+    question: '提出"最近发展区"理论的心理学家是？',
+    options: ['皮亚杰','维果茨基|维果斯基','布鲁纳','奥苏贝尔'],
+    answer: 'B', analysis: '最近发展区是维果茨基提出的，指学生现有水平和可能达到的水平之间的差距。' },
+  { category: '教师资格证', subject: '教育知识', type: 'multi', hot: 1, difficulty: 2, source: 'seed',
+    question: '下列属于建构主义学习理论观点的有？',
+    options: ['知识是对客观世界的准确反映','学习是学习者主动建构的过程','教学要创设情境','学生是知识的被动接受者'],
+    answer: 'B,C', analysis: '建构主义认为知识是学习者主动建构的，学习需要情境、协作、会话和意义建构。A是传统知识观，D是行为主义观点。' },
+  { category: '教师资格证', subject: '教育知识', type: 'fill', hot: 0, difficulty: 1, source: 'seed',
+    question: '"学而不思则罔，思而不学则殆"出自《____》。',
+    answer: '论语', analysis: '这句话出自《论语·为政》，是孔子关于学与思辩证关系的著名论断。' },
+  { category: '教师资格证', subject: '心理学', type: 'single', hot: 1, difficulty: 1, source: 'seed',
+    question: '马斯洛需要层次理论中，最高层次的需要是？',
+    options: ['生理需要','安全需要','尊重需要','自我实现需要'],
+    answer: 'D', analysis: '马斯洛需要层次从低到高：生理→安全→归属与爱→尊重→自我实现。' },
+  { category: '教师资格证', subject: '心理学', type: 'judge', hot: 0, difficulty: 1, source: 'seed',
+    question: '遗忘的规律是先快后慢。',
+    answer: '对', analysis: '艾宾浩斯遗忘曲线表明，遗忘在学习之后立即开始，而且遗忘的进程并不是均匀的，最初遗忘速度很快，以后逐渐缓慢。' },
+
+  // ===== 初级会计 =====
+  { category: '初级会计', subject: '会计基础', type: 'single', hot: 1, difficulty: 1, source: 'seed',
+    question: '会计的基本职能是？',
+    options: ['核算和监督','预测和决策','控制和考核','分析和评价'],
+    answer: 'A', analysis: '会计的基本职能包括进行会计核算和实施会计监督两个方面。' },
+  { category: '初级会计', subject: '会计基础', type: 'fill', hot: 0, difficulty: 1, source: 'seed',
+    question: '资产 = 负债 + ____',
+    answer: '所有者权益', analysis: '这是会计恒等式，是复式记账的理论基础。' },
+  { category: '初级会计', subject: '会计实务', type: 'single', hot: 1, difficulty: 2, source: 'seed',
+    question: '企业会计准则规定，企业会计核算应当以（ ）为基础？',
+    options: ['收付实现制','权责发生制','永续盘存制','实地盘存制'],
+    answer: 'B', analysis: '企业会计核算应当以权责发生制为基础，即收入和费用在发生时确认，而非在现金收付时确认。' },
+  { category: '初级会计', subject: '经济法', type: 'judge', hot: 0, difficulty: 2, source: 'seed',
+    question: '增值税专用发票的开具方和受票方都必须是增值税一般纳税人。',
+    answer: '对', analysis: '增值税专用发票只能由一般纳税人开具给一般纳税人，小规模纳税人需要由税务机关代开。' },
+  { category: '初级会计', subject: '经济法', type: 'multi', hot: 1, difficulty: 2, source: 'seed',
+    question: '下列项目中，属于增值税免税项目的有？',
+    options: ['农业生产者销售的自产农产品','古旧图书','销售自己使用过的物品','进口货物'],
+    answer: 'A,B,C', analysis: '农业生产者销售自产农产品、古旧图书、个人销售自己使用过的物品均免征增值税。进口货物需要缴纳增值税。' },
+
+  // ===== 法律职业资格 =====
+  { category: '法律职业资格', subject: '民法', type: 'single', hot: 1, difficulty: 2, source: 'seed',
+    question: '根据我国民法典，合同的订立一般要经过哪两个阶段？',
+    options: ['要约和承诺','邀请和要约','承诺和履行','协商和签订'],
+    answer: 'A', analysis: '《民法典》规定，当事人订立合同，可以采用要约、承诺方式或者其他方式。要约和承诺是合同订立的两个必经阶段。' },
+  { category: '法律职业资格', subject: '民法', type: 'judge', hot: 0, difficulty: 2, source: 'seed',
+    question: '不满八周岁的未成年人为无民事行为能力人。',
+    answer: '对', analysis: '《民法典》第十九条规定：不满八周岁的未成年人为无民事行为能力人，由其法定代理人代理实施民事法律行为。' },
+  { category: '法律职业资格', subject: '刑法', type: 'single', hot: 1, difficulty: 2, source: 'seed',
+    question: '我国刑法规定，不满（ ）周岁的人，一律不负刑事责任？',
+    options: ['12','14','16','18'],
+    answer: 'B', analysis: '刑法规定，不满14周岁的人，一律不负刑事责任。已满12不满14周岁的人，犯故意杀人、故意伤害致人死亡或特别残忍手段致重伤残疾，经最高检核准追诉。' },
+  { category: '法律职业资格', subject: '刑法', type: 'fill', hot: 0, difficulty: 1, source: 'seed',
+    question: '犯罪的三个基本特征是社会危害性、____和应受刑罚惩罚性。',
+    answer: '刑事违法性', analysis: '犯罪的三个基本特征：严重的社会危害性（本质特征）、刑事违法性（法律特征）、应受刑罚惩罚性（后果特征）。' },
+  { category: '法律职业资格', subject: '行政法', type: 'multi', hot: 1, difficulty: 3, source: 'seed',
+    question: '下列属于行政处罚种类的有？',
+    options: ['警告','罚款','行政拘留','没收违法所得'],
+    answer: 'A,B,C,D', analysis: '《行政处罚法》规定的处罚种类包括：警告、通报批评；罚款、没收违法所得、没收非法财物；暂扣许可证件、降低资质等级、吊销许可证件；限制开展生产经营活动、责令停产停业、责令关闭、限制从业；行政拘留；其他。' },
+];
+
+seedQuestions.forEach(q => { q.fingerprint = fp(q.question); });
+
+module.exports = seedQuestions;

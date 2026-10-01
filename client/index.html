@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<title>题库通 · 考什么练什么</title>
+<link rel="stylesheet" href="/style.css?v=20260929" />
+<script src="/vue.global.prod.js"></script>
+</head>
+<body>
+<div id="app">
+  <!-- 顶部：全局科目选择器 -->
+  <header class="topbar">
+    <div v-if="pageStack.length > 1" class="back" @click="goBack"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></div>
+    <div class="subject-picker" @click="toggleSubjectPicker">
+      <span class="sp-icon">{{ myExamSet ? catIcon(myExam.category) : '📋' }}</span>
+      <span class="sp-name">{{ myExamSet ? myExam.category : '选择科目' }}</span>
+      <span class="sp-arrow">{{ subjectPickerOpen ? '▲' : '▼' }}</span>
+    </div>
+    <div class="title-spacer"></div>
+  </header>
+
+  <!-- 科目选择下拉弹层 -->
+  <transition name="fade">
+    <div v-if="subjectPickerOpen" class="subject-overlay" @click.self="examReady && closeSubjectPicker()">
+      <div class="subject-dropdown">
+        <!-- 步骤滑轨 -->
+        <div class="sd-rail">
+          <div class="sd-rail-step" :class="{done: subjectPickerStep !== 'type', active: subjectPickerStep === 'type'}" @click="goToStep('type')">
+            <span class="sdr-dot">{{ subjectPickerStep !== 'type' ? '✓' : '1' }}</span>
+            <span class="sdr-label">选择类型</span>
+          </div>
+          <div class="sd-rail-line" :class="{done: subjectPickerStep !== 'type'}"></div>
+          <div class="sd-rail-step" :class="{active: subjectPickerStep === 'exam', locked: subjectPickerStep === 'type'}" @click="subjectPickerStep !== 'type' && goToStep('exam')">
+            <span class="sdr-dot">{{ selectedGroup && subjectPickerStep !== 'exam' ? '✓' : '2' }}</span>
+            <span class="sdr-label">选择考试</span>
+          </div>
+          <template v-if="selectedExam && selectedExam.subjects.length > 1">
+            <div class="sd-rail-line" :class="{done: subjectPickerStep === 'subject'}"></div>
+            <div class="sd-rail-step" :class="{active: subjectPickerStep === 'subject', locked: subjectPickerStep !== 'subject'}" @click="subjectPickerStep === 'subject' && goToStep('subject')">
+              <span class="sdr-dot">3</span>
+              <span class="sdr-label">选择科目</span>
+            </div>
+          </template>
+        </div>
+
+        <!-- 第一步：选择考试类型 -->
+        <template v-if="subjectPickerStep === 'type'">
+          <div class="sd-title">选择考试类型</div>
+          <div class="sd-type-grid">
+            <div v-for="g in categories" :key="g.id" class="sd-type-card" :style="`--gc:${g.color}`" @click="selectGroupStep(g)">
+              <div class="stc-ico">{{ g.icon }}</div>
+              <div class="stc-name">{{ g.name }}</div>
+              <div class="stc-desc">{{ g.desc }}</div>
+              <div class="stc-count">{{ g.exams.length }} 个考试</div>
+            </div>
+          </div>
+          <div class="sd-tip">先选择考试所属的类型</div>
+        </template>
+
+        <!-- 第二步：选择该类型下的考试 -->
+        <template v-else-if="subjectPickerStep === 'exam' && selectedGroup">
+          <div class="sd-title">
+            <span class="sd-back" @click="backToStep('type')">‹</span>
+            {{ selectedGroup.icon }} {{ selectedGroup.name }}
+          </div>
+          <div class="sd-subj-hint">共 {{ selectedGroup.exams.length }} 个考试，请选择</div>
+          <div class="sd-list">
+            <div class="sd-exam-grid">
+              <div v-for="e in selectedGroup.exams" :key="e.category" class="sd-exam-item" :class="{active: e.category === myExam.category}" @click="selectGlobalSubject(e)">
+                <div class="sei-name">{{ e.category }}</div>
+                <div class="sei-sub">{{ e.subject_count > 1 ? e.subject_count + '个科目' : (e.subjects[0]?.name || '') }}</div>
+                <div class="sei-foot">
+                  <span class="sei-count">{{ e.total }}题</span>
+                  <span class="sei-check" v-if="e.category === myExam.category">✓</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sd-tip">选择考试后{{ selectedGroup.exams.some(e=>e.subject_count>1) ? '，多科目考试需再选科目' : '即可开始刷题' }}</div>
+        </template>
+
+        <!-- 第三步：选择科目 -->
+        <template v-else-if="subjectPickerStep === 'subject' && selectedExam">
+          <div class="sd-title">
+            <span class="sd-back" @click="backToStep('exam')">‹</span>
+            {{ selectedExam.category }}
+          </div>
+          <div class="sd-subj-hint">该考试共 {{ selectedExam.subjects.length }} 个科目，请选择</div>
+          <div class="sd-list">
+            <div class="sd-exam-grid sd-subject-grid">
+              <div v-for="s in selectedExam.subjects" :key="s.name" class="sd-exam-item" :class="{active: s.name === myExam.subject && selectedExam.category === myExam.category}" @click="selectExamSubject(s.name)">
+                <div class="sei-name">{{ s.name }}</div>
+                <div class="sei-foot">
+                  <span class="sei-count">{{ s.total }}题</span>
+                  <span class="sei-check" v-if="s.name === myExam.subject && selectedExam.category === myExam.category">✓</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sd-tip">选择科目后开始刷题</div>
+        </template>
+      </div>
+    </div>
+  </transition>
+
+  <!-- 主内容区 -->
+  <main class="main" :class="{locked: !examReady}">
+
+    <!-- 未选择考试时的全屏锁定遮罩 -->
+    <div v-if="!examReady" class="lock-mask" @click="toggleSubjectPicker">
+      <div class="lock-tip">
+        <div class="lock-ico">📋</div>
+        <div class="lock-text">请先选择考试科目</div>
+        <div class="lock-hint">点击此处开始选择</div>
+      </div>
+    </div>
+
+    <!-- ===== 刷题页 ===== -->
+    <section v-if="page === 'home'">
+      <!-- 等级卡片 -->
+      <div class="level-card">
+        <div class="lc-top">
+          <div class="lc-level">Lv.{{ progress.stat.level || 1 }}</div>
+          <div class="lc-streak">🔥 连签 {{ progress.checkin?.streak || 0 }} 天</div>
+        </div>
+        <div class="lc-exp-row">
+          <span class="lc-exp-label">{{ progress.stat.exp || 0 }} 经验</span>
+          <span class="lc-exp-next">距 Lv.{{ (progress.stat.level || 1) + 1 }} 还需 {{ nextLevelExp() - (progress.stat.exp || 0) }}</span>
+        </div>
+        <div class="exp-bar"><div class="fill" :style="{width: expPct + '%'}"></div></div>
+        <div class="lc-btns">
+          <button class="lc-btn" @click="doCheckin" :disabled="checkinToday">
+            <span class="lc-btn-icon">📅</span>{{ checkinToday ? '今日已签到' : '每日签到' }}
+          </button>
+          <button class="lc-btn" @click="scrollToDaily">
+            <span class="lc-btn-icon">📝</span>每日一题
+          </button>
+        </div>
+      </div>
+
+      <!-- 科目切换 tab（多科目考试显示） -->
+      <div v-if="myExamSet && currentExamSubjects.length > 1" class="subject-tabs">
+        <div v-for="s in currentExamSubjects" :key="s.name" class="sub-tab" :class="{active: s.name === myExam.subject}" @click="switchSubject(s.name)">
+          {{ s.name }}
+          <span class="sub-tab-count">{{ s.total }}题</span>
+        </div>
+      </div>
+
+      <!-- 快捷刷题 -->
+      <div v-if="myExamSet" class="func-grid">
+        <div class="func-item blue" @click="quickPractice('order')">
+          <div class="func-ico">📄</div>
+          <div class="func-name">顺序练习</div>
+          <div class="func-desc">按科目逐题练习</div>
+        </div>
+        <div class="func-item orange" @click="quickPractice('hot')">
+          <div class="func-ico">🔥</div>
+          <div class="func-name">高频考点</div>
+          <div class="func-desc">只练必考热点</div>
+        </div>
+        <div class="func-item purple" @click="quickPractice('exam')">
+          <div class="func-ico">⏱️</div>
+          <div class="func-name">模拟考试</div>
+          <div class="func-desc">随机40题限时</div>
+        </div>
+        <div class="func-item green" @click="quickPractice('level')">
+          <div class="func-ico">🧗</div>
+          <div class="func-name">闯关模式</div>
+          <div class="func-desc">通关解锁下一关</div>
+        </div>
+      </div>
+      <div v-else class="card empty-tip">
+        <div class="empty-tip-ico">📋</div>
+        <div class="empty-tip-text">请先点击顶部选择考试科目</div>
+      </div>
+
+      <!-- 每日任务 -->
+      <div class="card">
+        <div class="card-head"><span>🎯 每日任务</span><span class="hot-tag">+{{ dailyTasks.reduce((s,t)=>s+t.reward,0) }} EXP</span></div>
+        <div class="task-list">
+          <div v-for="t in dailyTasks" :key="t.name" class="task-item" :class="{done: t.done}">
+            <span class="task-ico">{{ t.done ? '✅' : '⏳' }}</span>
+            <div class="task-info">
+              <div class="task-name">{{ t.name }}</div>
+              <div class="task-bar"><div class="tfill" :style="{width: t.progress + '%'}"></div></div>
+            </div>
+            <span class="task-reward">+{{ t.reward }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 每日一题 -->
+      <div class="card daily-card" v-if="daily" id="daily-card">
+        <template v-if="dailyDone">
+          <div class="daily-card-head">
+            <div class="daily-title">
+              <span class="daily-ico">🗓️</span>
+              <div>
+                <div class="daily-name">每日一题</div>
+                <div class="daily-sub">明日才能继续答题</div>
+              </div>
+            </div>
+          </div>
+          <div class="daily-done-msg">✅ 今日答题已完成，请明日再来！</div>
+          <div v-if="dailyResult" class="daily-result" :class="dailyResult.ok?'ok':'bad'">
+            {{ dailyResult.ok ? '✅ 正确！' : '❌ 答错了' }} {{ dailyResult.analysis }}
+          </div>
+        </template>
+        <template v-else>
+          <div class="daily-card-head">
+            <div class="daily-title">
+              <span class="daily-ico">🗓️</span>
+              <div>
+                <div class="daily-name">每日一题 · +5 经验</div>
+                <div class="daily-sub">今日热点题已就位，来挑战！</div>
+              </div>
+            </div>
+          </div>
+          <div class="q-text">{{ daily.question }}</div>
+          <div class="mini-opt" v-if="daily.options">
+            <span v-for="(o, i) in daily.options" :key="i" :class="['opt-pill', {pick: dailyPick === optLabel(i)}]" @click="pickDaily(optLabel(i))">{{ optLabel(i) }}. {{ o }}</span>
+          </div>
+          <div v-else class="mini-judge">
+            <span :class="['jbtn', {pick: dailyPick==='对'}]" @click="pickDaily('对')">✓ 对</span>
+            <span :class="['jbtn', {pick: dailyPick==='错'}]" @click="pickDaily('错')">✗ 错</span>
+          </div>
+          <div class="mini-fill" v-if="daily.type==='fill'">
+            <input v-model="dailyFill" placeholder="请输入答案…" />
+            <button class="btn-primary sm" :disabled="!dailyFill" @click="submitDaily">提交答案</button>
+          </div>
+          <div v-if="dailyResult" class="daily-result" :class="dailyResult.ok?'ok':'bad'">
+            {{ dailyResult.ok ? '✅ 正确！' : '❌ 答错了' }} {{ dailyResult.analysis }}
+          </div>
+        </template>
+      </div>
+
+      <!-- 学习工具 -->
+      <div class="section-title">学习工具</div>
+      <div class="card tools-card">
+        <div class="tool-row">
+          <div class="tool-item" @click="openWrong">
+            <span class="t-ico">📕</span>错题本
+            <span class="badge" v-if="progress.wrong.length">{{ progress.wrong.length }}</span>
+          </div>
+          <div class="tool-item" @click="openFav">
+            <span class="t-ico">⭐</span>我的收藏
+            <span class="badge" v-if="progress.fav.length">{{ progress.fav.length }}</span>
+          </div>
+          <div class="tool-item" @click="openRecord">
+            <span class="t-ico">📋</span>逐题回顾
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 答题页 ===== -->
+    <section v-else-if="page === 'quiz'">
+      <div class="quiz-head">
+        <div>第 {{ quizIndex + 1 }} / {{ quizTotal }} 题</div>
+        <div class="countdown" v-if="quizMode === 'exam'">⏱ {{ examLeft }}</div>
+        <div class="countdown" v-if="quizMode === 'level'">🏔️ 第 {{ levelStage }} 关 · 需对{{ levelPassScore }}题</div>
+      </div>
+
+      <div v-if="quizQuestion" class="q-card">
+        <div class="q-meta">
+          <span class="qtype">{{ typeLabel(quizQuestion.type) }}</span>
+          <span class="qcat">{{ quizQuestion.category }} · {{ quizQuestion.subject }}</span>
+          <span v-if="quizQuestion.hot" class="hot-tag">🔥 热点</span>
+        </div>
+        <div class="q-text">{{ quizQuestion.question }}</div>
+
+        <!-- 单选 -->
+        <div v-if="quizQuestion.type === 'single' || quizQuestion.type === 'multi'" class="opts">
+          <div v-for="(o, i) in quizQuestion.options" :key="i"
+            :class="['opt', {pick: quizAnswer.includes(optLabel(i)), 'wrong-pick': quizJudged && quizAnswer.includes(optLabel(i)) && optLabel(i) !== quizQuestion.answer, 'right-pick': quizJudged && (quizQuestion.type !== 'multi' ? optLabel(i) === quizQuestion.answer : quizQuestion.answer.split(',').includes(optLabel(i)))}]"
+            @click="pickQuiz(optLabel(i))">
+            <span class="opt-label">{{ optLabel(i) }}</span>
+            <span class="opt-text">{{ o }}</span>
+          </div>
+          <div class="quiz-btn-row">
+            <button v-if="quizQuestion.type==='multi'" class="btn-primary sm" @click="submitQuiz">确认</button>
+          </div>
+        </div>
+
+        <!-- 判断 -->
+        <div v-else-if="quizQuestion.type === 'judge'" class="judge-box">
+          <span :class="['jbtn', {pick: quizAnswer==='对', 'right-pick': quizJudged && quizQuestion.answer.startsWith('对'), 'wrong-pick': quizJudged && quizAnswer==='对' && !quizQuestion.answer.startsWith('对')}]" @click="pickQuiz('对')">✓ 正确</span>
+          <span :class="['jbtn', {pick: quizAnswer==='错', 'right-pick': quizJudged && quizQuestion.answer.startsWith('错'), 'wrong-pick': quizJudged && quizAnswer==='错' && !quizQuestion.answer.startsWith('错')}]" @click="pickQuiz('错')">✗ 错误</span>
+        </div>
+
+        <!-- 填空 -->
+        <div v-else-if="quizQuestion.type === 'fill'" class="fill-box">
+          <input v-model="quizFill" placeholder="请输入答案…" />
+          <button class="btn-primary sm" @click="submitQuiz">提交</button>
+        </div>
+
+        <!-- 解析 -->
+        <div v-if="quizJudged" class="analysis">
+          <div class="ans-line">正确答案: <b>{{ quizQuestion.answer }}</b></div>
+          <div class="ans-line" v-if="quizAnswer && quizQuestion.type !== 'multi'">你的答案: <span :class="quizCorrect?'ok':'bad'">{{ quizAnswer || '(未作答)' }}</span></div>
+          <div class="ans-line" v-if="quizQuestion.type === 'multi'">你的答案: <span :class="quizCorrect?'ok':'bad'">{{ quizAnswer || '(未作答)' }}</span></div>
+          <div class="ans-line analysis-text">{{ quizQuestion.analysis }}</div>
+          <button class="btn-primary sm" @click="toggleFav">⭐ {{ quizFaved ? '取消收藏' : '收藏' }}</button>
+        </div>
+
+        <div class="quiz-next-row">
+          <button v-if="quizJudged" class="btn-primary" @click="nextQuiz">{{ quizIndex + 1 >= quizTotal ? '查看成绩 →' : '下一题 →' }}</button>
+        </div>
+      </div>
+
+      <!-- PK 血条 -->
+      <div v-if="quizMode === 'pk'" class="pk-bar">
+        <div class="pk-hp me"><div class="hp-fill" :style="{width: pkMe + '%'}"></div><span>我 🎓 {{ pkMe }}</span></div>
+        <div class="pk-hp ai"><div class="hp-fill" :style="{width: pkAi + '%'}"></div><span>AI 🤖 {{ pkAi }}</span></div>
+      </div>
+    </section>
+
+    <!-- ===== 成绩页 ===== -->
+    <section v-else-if="page === 'result'">
+      <div class="result-card">
+        <div class="result-title">{{ resultTitle }}</div>
+        <div class="result-big" :class="resultRatio >= 60 ? 'ok' : 'bad'">{{ resultRatio }}%</div>
+        <div class="result-detail">答对 {{ resultDetail.correct }} 题 · 答错 {{ resultDetail.wrong }} 题</div>
+        <div class="exp-line" v-if="resultExp">🎁 获得 {{ resultExp }} EXP</div>
+        <button v-if="quizMode==='level' && resultDetail.correct >= 3" class="btn-primary" @click="nextLevel">🚀 挑战第 {{ levelStage }} 关</button>
+        <button v-if="quizMode==='level' && resultDetail.correct < 3" class="btn-primary" @click="retryLevel">🔄 重试本关</button>
+        <button class="btn-primary" @click="reviewQuiz">📋 查看逐题回顾</button>
+        <button class="btn-ghost" @click="switchTab('home')">返回首页</button>
+      </div>
+    </section>
+
+    <!-- ===== 资料商城 ===== -->
+    <section v-else-if="page === 'shop'">
+      <div class="hero shop-hero">
+        <div class="hero-title">🛒 考前资料商城</div>
+        <div class="hero-sub">
+          <span v-if="myExamSet">{{ myExam.category }} 专属资料</span>
+          <span v-else>请先选择考试科目</span>
+        </div>
+      </div>
+
+      <div class="products">
+        <div class="product" v-for="p in filteredProducts" :key="p.id" @click="openProduct(p)">
+          <div class="p-icon" :class="catIconClass(p.category)">{{ catIcon(p.category) }}</div>
+          <div class="pname">{{ p.name }}</div>
+          <div class="pdesc">{{ p.desc }}</div>
+          <div class="pprice">
+            <span class="now">¥{{ p.price }}</span>
+            <span class="orig">¥{{ p.originalPrice }}</span>
+          </div>
+        </div>
+        <div v-if="!filteredProducts.length" class="empty">该科目暂无资料</div>
+      </div>
+
+      <div class="card" v-if="progress.stat">
+        <div class="card-head"><span>📦 我的订单</span></div>
+        <div class="orders" v-if="orders.length">
+          <div v-for="o in orders" :key="o.id" class="order">
+            <div>订单号 #{{ o.id }}</div>
+            <div>¥{{ o.amount }} · {{ o.status === 'paid' ? '✅ 已支付' : '⏳ 处理中' }}</div>
+          </div>
+        </div>
+        <div v-else class="empty">暂无订单</div>
+      </div>
+    </section>
+
+    <!-- ===== 商品详情 ===== -->
+    <section v-else-if="page === 'product'">
+      <div class="card product-detail-card" v-if="currentProduct">
+        <div class="pdetail-icon" :class="catIconClass(currentProduct.category)">{{ catIcon(currentProduct.category) }}</div>
+        <div class="pd-name">{{ currentProduct.name }}</div>
+        <div class="pd-cat">{{ currentProduct.category }}</div>
+        <div class="pd-desc">{{ currentProduct.desc }}</div>
+        <div class="pd-price">
+          <span class="now">¥{{ currentProduct.price }}</span>
+          <span class="orig">¥{{ currentProduct.originalPrice }}</span>
+        </div>
+      </div>
+
+      <div class="card" v-if="currentProduct">
+        <div class="card-head"><span>资料内容（购买后解锁）</span></div>
+        <div class="pd-preview-list">
+          <div class="pv-row" v-for="(item, i) in previewItems" :key="i">
+            <span class="pv-bullet">📌</span>
+            <span class="pv-text" :class="{blurred: !isPaid(currentProduct.id)}">{{ item }}</span>
+          </div>
+        </div>
+        <div class="pv-lock" v-if="!isPaid(currentProduct.id)">🔒 更多内容购买后立即解锁</div>
+      </div>
+
+      <div class="buy-bar" v-if="currentProduct">
+        <div class="buy-price">¥{{ currentProduct.price }}</div>
+        <button v-if="!isPaid(currentProduct.id)" class="buy-btn" @click="buyProduct(currentProduct)">立即购买</button>
+        <div v-else class="paid-msg">✅ 已购买</div>
+      </div>
+    </section>
+
+    <!-- ===== 我的订单 ===== -->
+    <section v-else-if="page === 'orders'">
+      <div class="card orders-page-card">
+        <div class="card-head"><span>📦 我的订单</span><span class="count" v-if="enrichedOrders.length">{{ enrichedOrders.length }} 笔</span></div>
+        <div v-if="enrichedOrders.length" class="order-list">
+          <div v-for="o in enrichedOrders" :key="o.id" class="order-card">
+            <div class="oc-top">
+              <span class="oc-icon">{{ o.productIcon }}</span>
+              <div class="oc-info">
+                <div class="oc-name">{{ o.productName }}</div>
+                <div class="oc-meta">订单号 #{{ o.id }} · {{ o.created_at ? new Date(o.created_at).toLocaleDateString() : '' }}</div>
+              </div>
+              <span class="oc-status" :class="{paid: o.status === 'paid'}">{{ o.status === 'paid' ? '✅ 已支付' : '⏳ 处理中' }}</span>
+            </div>
+            <div class="oc-bottom">
+              <span class="oc-price">¥{{ o.amount || o.productPrice }}</span>
+              <button v-if="o.status === 'paid'" class="btn-ghost sm" @click="page='shop'; pageStack=['shop']">去资料商城</button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty">
+          <div class="empty-tip-ico">🛒</div>
+          <div class="empty-tip-text">暂无订单，去资料商城逛逛吧</div>
+          <button class="btn-primary sm" style="margin-top:12px" @click="page='shop'; pageStack=['shop']">去资料商城</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 我的 ===== -->
+    <section v-else-if="page === 'me'">
+      <!-- 个人信息卡 -->
+      <div class="me-card">
+        <div class="me-avatar">🎓</div>
+        <div class="me-info">
+          <div class="me-name">Lv.{{ progress.stat.level || 1 }} 学习用户</div>
+          <div class="me-meta">{{ progress.stat.exp || 0 }} 经验 · 连签{{ progress.checkin?.streak || 0 }}天 · 数据仅存本机</div>
+          <div class="exp-bar"><div class="fill" :style="{width: expPct + '%'}"></div></div>
+        </div>
+      </div>
+
+      <!-- 统计卡片 -->
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="sc-num">{{ progress.stat.total || 0 }}</div>
+          <div class="sc-label">累计答题</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-num">{{ rate }}%</div>
+          <div class="sc-label">正确率</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-num">{{ badges.filter(b=>b.unlocked).length }}</div>
+          <div class="sc-label">徽章</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-num">{{ progress.wrong.length }}</div>
+          <div class="sc-label">错题</div>
+        </div>
+      </div>
+
+      <!-- 学习热力图 -->
+      <div class="card">
+        <div class="card-head"><span>🔥 学习热力图（近15周）</span></div>
+        <div class="heatmap">
+          <div class="hm-week" v-for="w in 15" :key="w">
+            <div class="hm-cell" v-for="d in 7" :key="d" :class="hmLevel(d, w)"></div>
+          </div>
+        </div>
+        <div class="hm-legend">
+          <span>少</span>
+          <span class="hm-dot l0"></span>
+          <span class="hm-dot l1"></span>
+          <span class="hm-dot l2"></span>
+          <span class="hm-dot l3"></span>
+          <span class="hm-dot l4"></span>
+          <span>多 · 每天20题以上为深绿</span>
+        </div>
+      </div>
+
+      <!-- 考点掌握度 -->
+      <div class="card">
+        <div class="card-head"><span>📊 考点掌握度</span></div>
+        <div class="cat-tags small">
+          <span class="cat-tag" v-for="c in categories" :key="c.category">{{ c.category }}</span>
+        </div>
+        <div class="radar-wrap">
+          <canvas ref="radarCanvas" width="280" height="240"></canvas>
+          <div class="radar-center">按科目答题正确率计算 · 边答题边点亮</div>
+        </div>
+      </div>
+
+      <!-- 成就徽章 -->
+      <div class="card">
+        <div class="card-head"><span>🏅 成就徽章</span></div>
+        <div class="badges">
+          <div v-for="b in badges" :key="b.id" class="badge" :class="{locked: !b.unlocked, glow: b.unlocked}">
+            <div class="bicon">{{ b.icon }}</div>
+            <div class="bname">{{ b.name }}</div>
+            <div class="btooltip">{{ b.desc }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 菜单列表 -->
+      <div class="card menu-card">
+        <div class="menu-item" @click="openOrders">
+          <span class="menu-ico">📋</span>
+          <span class="menu-name">我的订单</span>
+          <span class="menu-arrow">›</span>
+        </div>
+        <div class="menu-item" @click="toggleSound">
+          <span class="menu-ico">{{ soundOn ? '🔊' : '🔇' }}</span>
+          <span class="menu-name">音效（{{ soundOn ? '开' : '关' }}）</span>
+          <span class="menu-arrow">›</span>
+        </div>
+        <div class="menu-item" @click="toggleDark">
+          <span class="menu-ico">{{ darkMode ? '🌙' : '☀️' }}</span>
+          <span class="menu-name">夜间模式（{{ darkMode ? '开' : '关' }}）</span>
+          <span class="menu-arrow">›</span>
+        </div>
+        <div class="menu-item" @click="editNickname">
+          <span class="menu-ico">✏️</span>
+          <span class="menu-name">修改昵称</span>
+          <span class="menu-arrow">›</span>
+        </div>
+        <div class="menu-item" @click="clearAllData">
+          <span class="menu-ico">🗑️</span>
+          <span class="menu-name">清空本地数据</span>
+          <span class="menu-arrow">›</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 错题本/收藏/回顾 通用 ===== -->
+    <section v-else-if="page === 'wrong' || page === 'fav' || page === 'review' || page === 'record'">
+      <div class="card">
+        <div class="card-head">
+          <span>{{ pageTitleMap[page] }}</span>
+          <span class="count">{{ listQuestions.length }} 题</span>
+        </div>
+        <div v-if="page === 'wrong' && listQuestions.length" class="wrong-action-bar">
+          <button class="btn-primary sm" @click="startWrongPractice">📝 开始错题重练</button>
+        </div>
+        <div v-if="listQuestions.length" class="qlist">
+          <div v-for="(q, idx) in listQuestions" :key="q.id" class="qlist-item" @click="openListQuestion(idx)">
+            <div class="ql-idx">{{ idx + 1 }}</div>
+            <div class="ql-body">
+              <div class="ql-q">{{ q.question }}</div>
+              <div class="ql-meta">
+                <span class="qtype">{{ typeLabel(q.type) }}</span>
+                <span v-if="page === 'wrong' && q.lastAnswer" class="my-ans">你答: {{ q.lastAnswer }}</span>
+                <span class="right-ans">正确: {{ q.answer }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty">
+          <template v-if="page === 'wrong'">🎉 暂无错题，继续加油！</template>
+          <template v-else-if="page === 'fav'">⭐ 还没收藏题目哦</template>
+          <template v-else>暂无记录</template>
+        </div>
+        <div v-if="openListIdx !== null" class="qlist-detail">
+          <div class="qd-head">题目 {{ openListIdx + 1 }}</div>
+          <div class="qd-q">{{ currentListQuestion.question }}</div>
+          <div class="qd-opt" v-if="currentListQuestion.options">
+            <div v-for="(o, i) in currentListQuestion.options" :key="i"
+              :class="['qd-row', {'right': optLabel(i) === currentListQuestion.answer || currentListQuestion.answer.split(',').includes(optLabel(i))}]">
+              {{ optLabel(i) }}. {{ o }}
+            </div>
+          </div>
+          <div class="qd-fill" v-if="currentListQuestion.type==='fill'">答案: <b>{{ currentListQuestion.answer }}</b></div>
+          <div class="qd-analyze" v-if="currentListQuestion.analysis">📖 {{ currentListQuestion.analysis }}</div>
+          <div class="qd-btns">
+            <button v-if="page === 'wrong'" class="btn-ghost sm" @click="removeWrong(currentListQuestion.id)">移出错题本</button>
+            <button class="btn-ghost sm" @click="openListIdx = null">关闭</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 管理后台 ===== -->
+    <section v-else-if="page === 'admin'">
+      <div class="card" v-if="adminAuthenticated">
+        <div class="card-head"><span>📊 数据看板</span></div>
+        <div class="admin-stats" v-if="adminStats">
+          <div class="as-row"><span>题库总量</span><b>{{ adminStats.total }}</b></div>
+          <div class="as-row" v-for="b in adminStats.byCat" :key="b.category"><span>{{ b.category }}</span><b>{{ b.c }}</b></div>
+        </div>
+      </div>
+      <div v-else class="card">
+        <div class="card-head"><span>🔐 管理登录</span></div>
+        <input v-model="adminToken" placeholder="输入管理令牌 (默认 dev123)" class="search-input" />
+        <button class="btn-primary" @click="authAdmin">登录</button>
+      </div>
+      <div class="card" v-if="adminAuthenticated">
+        <div class="card-head"><span>🌐 URL 采集</span></div>
+        <input v-model="crawlUrl" placeholder="目标 URL" class="search-input" />
+        <input v-model="crawlCat" placeholder="归属行业" class="search-input" />
+        <input v-model="crawlSub" placeholder="归属科目" class="search-input" />
+        <button class="btn-primary" @click="doCrawl">开始采集</button>
+        <div v-if="crawlResult" class="crawl-result">{{ crawlResult }}</div>
+      </div>
+      <div class="card" v-if="adminAuthenticated">
+        <div class="card-head"><span>📥 导入 NDJSON</span></div>
+        <textarea v-model="importText" rows="8" placeholder='每行一道题: {"category":"xxx","subject":"xxx","type":"single","question":"...","options":["A","B","C","D"],"answer":"A","analysis":"...","hot":0}' class="import-area"></textarea>
+        <button class="btn-primary" @click="doImport">入库</button>
+      </div>
+      <div class="card" v-if="adminAuthenticated">
+        <div class="card-head"><span>🗂 题库管理</span></div>
+        <div class="admin-ctrl">
+          <button class="btn-ghost" @click="dbClear('公务员·事业编')">清空公考采集</button>
+          <button class="btn-danger" @click="dbClear('all')">清空全部 (除种子)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 支付弹窗 ===== -->
+    <div v-if="paying" class="pay-modal" @click.self="paying=false">
+      <div class="pay-box">
+        <div class="pay-title">确认支付</div>
+        <div class="pay-info">{{ currentProduct?.name }} · ¥{{ currentProduct?.price }}</div>
+        <div class="pay-status" v-if="payStatus === 0">准备中…</div>
+        <div class="pay-status" v-else-if="payStatus === 1">⏳ 处理中…</div>
+        <div class="pay-status ok" v-else>✅ 支付成功！</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- 底部 Tab -->
+  <nav class="tabbar" v-if="showTab">
+    <div class="tab" :class="{active: page==='home' || page==='quiz' || page==='result' || page==='review' || page==='record' || page==='wrong' || page==='fav', disabled: !examReady}" @click="switchTabSafe('home')">
+      <div class="ticon">📝</div><div>刷题</div>
+    </div>
+    <div class="tab" :class="{active: page==='shop' || page==='product', disabled: !examReady}" @click="switchTabSafe('shop')">
+      <div class="ticon">🛒</div><div>资料</div>
+    </div>
+    <div class="tab" :class="{active: page==='me', disabled: !examReady}" @click="switchTabSafe('me')">
+      <div class="ticon">👤</div><div>我的</div>
+    </div>
+  </nav>
+
+</div>
+
+<script src="/app.js?v=20260929"></script>
+</body>
+</html>
